@@ -1536,6 +1536,8 @@ extern "C" {
     */
     extern void bcm2835_gpio_write(uint8_t pin, uint8_t on);
 
+    extern uint8_t bcm2835_gpio_read(uint8_t pin);
+
     /*! Sets any of the first 32 GPIO output pins specified in the mask to the state given by on
       \param[in] mask Mask of pins to affect. Use eg: (1 << RPI_GPIO_P1_03) | (1 << RPI_GPIO_P1_05)
       \param[in] on HIGH sets the output to HIGH and LOW to LOW.

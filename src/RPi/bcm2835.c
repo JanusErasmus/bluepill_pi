@@ -512,6 +512,11 @@ void bcm2835_gpio_write(uint8_t pin, uint8_t on)
 	bcm2835_gpio_clr(pin);
 }
 
+uint8_t bcm2835_gpio_read(uint8_t pin)
+{
+	return bcm2835_gpio_lev(pin);
+}
+
 /* Set the state of a all 32 outputs in the mask to on or off */
 void bcm2835_gpio_write_multi(uint32_t mask, uint8_t on)
 {

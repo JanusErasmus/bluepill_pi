@@ -486,7 +486,6 @@ nRF24_RXResult nRF24_ReadPayload(uint8_t *pBuf, uint8_t *length) {
 	// The RX FIFO is empty
 	*length = 0;
 
-	nRF24_FlushRX();
 	return nRF24_RX_EMPTY;
 }
 
