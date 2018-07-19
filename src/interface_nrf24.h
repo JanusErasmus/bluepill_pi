@@ -15,6 +15,8 @@ class InterfaceNRF24
 	static InterfaceNRF24 *__instance;
 	nRF24cb nrf_cb;
 	uint32_t mPacketsLost;
+	int mNetAddressLen;
+	uint8_t mNetAddress[5];
 
 	static uint8_t nrf_t(uint8_t *tx_data, uint8_t *rx_data, int len);
 	static void nrf_cs_l(void);
@@ -23,11 +25,11 @@ class InterfaceNRF24
 	static void nrf_ce_h(void);
 	nRF24_TXResult transmitPacket(uint8_t *pBuf, uint8_t length);
 
-	InterfaceNRF24();
+	InterfaceNRF24(uint8_t *net_address, int len);
 	virtual ~InterfaceNRF24();
 
 public:
-	static void init();
+	static void init(uint8_t *net_address, int len);
 	static InterfaceNRF24 *get(){ return __instance; }
 
 	void run();
