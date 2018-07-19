@@ -18,6 +18,8 @@ class InterfaceNRF24
 	int mNetAddressLen;
 	uint8_t mNetAddress[5];
 
+	bool (*receivedCB)(int pipe, uint8_t *data, int len);
+
 	static uint8_t nrf_t(uint8_t *tx_data, uint8_t *rx_data, int len);
 	static void nrf_cs_l(void);
 	static void nrf_cs_h(void);
@@ -31,6 +33,8 @@ class InterfaceNRF24
 public:
 	static void init(uint8_t *net_address, int len);
 	static InterfaceNRF24 *get(){ return __instance; }
+
+	void setRXcb(bool(cb(int pipe, uint8_t *data, int len))){ receivedCB = cb; }
 
 	void run();
 	int transmit(uint8_t *addr, uint8_t *payload, uint8_t length);

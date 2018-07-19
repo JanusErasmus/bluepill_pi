@@ -2,39 +2,84 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+#include "Utils/utils.h"
 #include "RPi/bcm2835.h"
 #include "RPi/RF24_arch_config.h"
 #include "interface_nrf24.h"
 #include "mqtt_object.h"
 
+MQTT *mq = 0;
+uint8_t netAddress[] = {0x00, 0x44, 0x55};
 
-//void exit_example(int status, int sockfd, pthread_t *client_daemon)
-//{
-//    if (sockfd != -1) close(sockfd);
-//    if (client_daemon != NULL) pthread_cancel(*client_daemon);
-//    exit(status);
-//}
+
+void catHEXstring(uint8_t *data, int len, char *string)
+{
+	for (int k = 0; k < len; ++k)
+	{
+		char hex[8];
+		sprintf(hex, "%02X", data[k]);
+		strcat(string, hex);
+	}
+}
+
+char message[128];
+
+bool NRFreceivedCB(int pipe, uint8_t *data, int len)
+{
+	printf("RCV PIPE# %d\n", (int)pipe);
+	printf(" PAYLOAD: %d\n", len);
+	diag_dump_buf(data, len);
+
+	if(mq)
+	{
+		char topic[32];
+		message[0] = 0;
+
+		sprintf(topic, "/node/up/%d", pipe);
+
+		sprintf(message, "{\"payload\":\"");
+		catHEXstring(data, len, message);
+		strcat(message, "\"}");
+		//printf("Message: %d\n", strlen(message) + 1);
+		//diag_dump_buf(message, strlen(message) + 1);
+		mq->publish(topic, message);
+	}
+
+	return false;
+}
+
+bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
+{
+	printf("MQTT PIPE# %d\n", (int)pipe);
+	printf(" PAYLOAD: %d\n", len);
+	diag_dump_buf(data, len);
+
+	uint8_t address[5];
+	memcpy(address, netAddress, 5);
+	address[0] = pipe;
+
+	InterfaceNRF24::get()->transmit(address, data, 10);
+
+	return false;
+}
 
 int main()
 {
 	printf("NRF24 listener\n");
 
-	uint8_t netAddress[] = {0x00, 0x44, 0x55};
 	InterfaceNRF24::init(netAddress, 3);
+	InterfaceNRF24::get()->setRXcb(NRFreceivedCB);
 
-	const char *topic = "/node/#";
+	const char *topic = "/node/down/#";
 	const char *addr = "160.119.253.3";
 	const char *port = "1883";
-	MQTT mq(topic, addr, port);
-
+	mq = new MQTT(topic, addr, port);
+	mq->setRXcb(MQTTreceivedCB);
 
 	while(1)
 	{
-		printf("Run\n");
 		InterfaceNRF24::get()->run();
-//		usleep(100000);
-	mq.publish("/pi", "object hi");
-		sleep(5);
+		usleep(100000);
 	}
 	return 0;
 }

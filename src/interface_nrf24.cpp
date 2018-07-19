@@ -303,10 +303,13 @@ void InterfaceNRF24::run()
 		// Clear all pending IRQ flags
 		nRF24_ClearIRQFlags();
 
-		// Print a payload contents to UART
-		printf("RCV PIPE# %d\n", (int)pipe);
-		printf(" PAYLOAD: %d\n", payload_length);
-		diag_dump_buf(nRF24_payload, payload_length);
+		if(receivedCB)
+			receivedCB(pipe, nRF24_payload, payload_length);
+
+		// Print a payload contents
+		//printf("RCV PIPE# %d\n", (int)pipe);
+		//printf(" PAYLOAD: %d\n", payload_length);
+		//diag_dump_buf(nRF24_payload, payload_length);
 	}
 }
 

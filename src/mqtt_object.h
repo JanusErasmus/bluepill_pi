@@ -13,14 +13,21 @@
 class MQTT
 {
 	struct mqtt_client client;
+	pthread_t client_daemon;
+	int sockfd;
 	uint8_t sendbuf[2048]; /* sendbuf should be large enough to hold multiple whole mqtt messages */
 	uint8_t recvbuf[1024]; /* recvbuf should be large enough any whole mqtt message expected to be received */
 
+
+
 public:
+	static bool (*receivedCB)(int pipe, uint8_t *data, int len);
 	MQTT(const char *topic, const char *addr, const char *port);
 	virtual ~MQTT();
 
-	bool publish(const char *topic, char *application_message);
+	void setRXcb(bool(cb(int pipe, uint8_t *data, int len))){ receivedCB = cb; }
+
+	bool publish(char *topic, char *application_message);
 };
 
 #endif /* MQTT_OBJECT_H_ */
