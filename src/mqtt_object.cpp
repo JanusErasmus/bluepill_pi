@@ -119,13 +119,28 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
 
     if(MQTT::receivedCB)
     {
-    	int len = strlen(topic_name) - 1;
-    	int pipe = atoi((const char*)&topic_name[len]);
+    	char pipeString[32];
+    	int k = 0;
+    	char *ptr = topic_name;
+    	do {
+    		ptr = strchr(ptr, '/');
+    		if(ptr)
+    		{
+    			//printf("%d: %s\n",k , ptr);
+    			if(k == 2)
+    			{
+    				strcpy(pipeString, ptr + 1);
+    				break;
+    			}
+    			ptr++;
+    			k++;
+    		}
+    	}while(ptr);
 
+    	//printf("pipe %s\n", pipeString);
+    	int pipe = atoi(pipeString);
 
     	MQTT::receivedCB(pipe, payload, published->application_message_size + 1);
-
-
     }
 
     free(topic_name);
@@ -135,7 +150,6 @@ bool (*MQTT::receivedCB)(int pipe, uint8_t *data, int len) = 0;
 
 MQTT::MQTT(const char *topic, const char *addr, const char *port)
 {
-
 	/* setup a client */
 	/* open the non-blocking TCP socket (connecting to the broker) */
 	sockfd = open_nb_socket(addr, port);
@@ -145,7 +159,7 @@ MQTT::MQTT(const char *topic, const char *addr, const char *port)
 	}
 
 	mqtt_init(&client, sockfd, sendbuf, sizeof(sendbuf), recvbuf, sizeof(recvbuf), publish_callback);
-	mqtt_connect(&client, "janus_pi", NULL, NULL, 0, "janus", "Janus506", 0, 400);
+	mqtt_connect(&client, "janus_pi_client", NULL, NULL, 0, "janus", "Janus506", 0, 400);
 
 	/* check that we don't have any errors */
 	if (client.error != MQTT_OK) {
@@ -163,6 +177,7 @@ MQTT::MQTT(const char *topic, const char *addr, const char *port)
 		return;
 	}
 
+	printf("Subscibe to %s\n", topic);
 
 	/* subscribe */
 	mqtt_subscribe(&client, topic, 0);

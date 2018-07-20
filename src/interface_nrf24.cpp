@@ -96,6 +96,8 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 {
 	mPacketsLost = 0;
 	mNetAddressLen = len;
+	uint8_t temp_addr[5];
+	memcpy(temp_addr, net_addr, len);
 	memcpy(mNetAddress, net_addr, len);
 
 	nrf_cb.nRF24_T = nrf_t;
@@ -123,27 +125,28 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 	nRF24_SetAddrWidth(len);
 
 	// Configure RX PIPES
-	nRF24_SetAddr(nRF24_PIPE0, net_addr);
-	nRF24_SetRXPipe(nRF24_PIPE0	, nRF24_AA_ON, 10); // Auto-ACK: enabled, payload length: 10 bytes
-	net_addr[0] = 0x01;
-	nRF24_SetAddr(nRF24_PIPE1, net_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE1	, nRF24_AA_ON, 10); // Auto-ACK: enabled, payload length: 10 bytes
+	nRF24_SetAddr(nRF24_PIPE0, temp_addr);
+	nRF24_SetRXPipe(nRF24_PIPE0	, nRF24_AA_ON, 16); // Auto-ACK: enabled, payload length: 10 bytes
 
-	net_addr[0] = 0x02;
-	nRF24_SetAddr(nRF24_PIPE2, net_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 10); // Auto-ACK: enabled, payload length: 10 bytes
+	temp_addr[0] = 0x01;
+	nRF24_SetAddr(nRF24_PIPE1, temp_addr); // program address for pipe
+	nRF24_SetRXPipe(nRF24_PIPE1	, nRF24_AA_ON, 16); // Auto-ACK: enabled, payload length: 10 bytes
 
-	net_addr[0] = 0x03;
-	nRF24_SetAddr(nRF24_PIPE3, net_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 10); // Auto-ACK: enabled, payload length: 10 bytes
+	temp_addr[0] = 0x02;
+	nRF24_SetAddr(nRF24_PIPE2, temp_addr); // program address for pipe
+	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 16); // Auto-ACK: enabled, payload length: 10 bytes
 
-	net_addr[0] = 0x04;
-	nRF24_SetAddr(nRF24_PIPE4, net_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 10); // Auto-ACK: enabled, payload length: 10 bytes
+	temp_addr[0] = 0x03;
+	nRF24_SetAddr(nRF24_PIPE3, temp_addr); // program address for pipe
+	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 16); // Auto-ACK: enabled, payload length: 10 bytes
 
-	net_addr[0] = 0x05;
-	nRF24_SetAddr(nRF24_PIPE5, net_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 10); // Auto-ACK: enabled, payload length: 10 bytes
+	temp_addr[0] = 0x04;
+	nRF24_SetAddr(nRF24_PIPE4, temp_addr); // program address for pipe
+	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 16); // Auto-ACK: enabled, payload length: 10 bytes
+
+	temp_addr[0] = 0x05;
+	nRF24_SetAddr(nRF24_PIPE5, temp_addr); // program address for pipe
+	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 16); // Auto-ACK: enabled, payload length: 10 bytes
 
 	// Set TX power for Auto-ACK (maximum, to ensure that transmitter will hear ACK reply)
 	nRF24_SetTXPower(nRF24_TXPWR_0dBm);
@@ -294,9 +297,10 @@ void InterfaceNRF24::run()
 	if(digitalRead(RPI_V2_GPIO_P1_26))
 		return;
 
-    uint8_t payload_length = 10;
+	uint8_t payload_length = 16;
 	uint8_t nRF24_payload[32];
-	while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY) {
+	while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
+	{
 		// Get a payload from the transceiver
 		nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
 

@@ -37,8 +37,10 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 
 		sprintf(topic, "/node/up/%d", pipe);
 
-		sprintf(message, "{\"payload\":\"");
-		catHEXstring(data, len, message);
+		uint32_t up;
+		memcpy(&up, data ,4);
+		sprintf(message, "{\"payload\":\"%d", up);
+//		catHEXstring(data, len, message);
 		strcat(message, "\"}");
 		//printf("Message: %d\n", strlen(message) + 1);
 		//diag_dump_buf(message, strlen(message) + 1);
@@ -47,6 +49,14 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 
 	return false;
 }
+
+typedef struct {
+	uint32_t timestamp;		//4
+	uint8_t inputs;			//1
+	uint8_t outputs;		//1
+	uint16_t voltages[4];	//8
+	uint16_t temperature;	//2
+}__attribute__((packed, aligned(4))) nodeData_s;
 
 bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 {
@@ -58,7 +68,7 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 	memcpy(address, netAddress, 5);
 	address[0] = pipe;
 
-	InterfaceNRF24::get()->transmit(address, data, 10);
+	InterfaceNRF24::get()->transmit(address, data, 16);
 
 	return false;
 }
@@ -70,7 +80,7 @@ int main()
 	InterfaceNRF24::init(netAddress, 3);
 	InterfaceNRF24::get()->setRXcb(NRFreceivedCB);
 
-	const char *topic = "/node/down/#";
+	const char *topic = "\/node\/down\/+";
 	const char *addr = "160.119.253.3";
 	const char *port = "1883";
 	mq = new MQTT(topic, addr, port);
