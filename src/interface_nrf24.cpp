@@ -113,7 +113,8 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 	nRF24_Init(&nrf_cb);
 
 	// Set RF channel
-	nRF24_SetRFChannel(40);
+	nRF24_SetRFChannel(84);
+	printf("NRF @ %dMHz\n", 2400 + 84);
 
 	// Set data rate
 	nRF24_SetDataRate(nRF24_DR_250kbps);
@@ -215,15 +216,13 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 		return nRF24_TX_TIMEOUT;
 	}
 
-	// Clear pending IRQ flags
-    nRF24_ClearIRQFlags();
-    nRF24_GetStatus();
 
 	// Check the flags in STATUS register
 	printf(" - Status: %02X\n", status);
 
 	if (status & nRF24_FLAG_MAX_RT) {
 		// Auto retransmit counter exceeds the programmed maximum limit (FIFO is not removed)
+		nRF24_FlushTX();
 		return nRF24_TX_MAXRT;
 	}
 
@@ -231,6 +230,7 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 		// Successful transmission
 		return nRF24_TX_SUCCESS;
 	}
+
 
 	// Some banana happens, a payload remains in the TX FIFO, flush it
 	nRF24_FlushTX();
@@ -283,6 +283,10 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 		break;
 	}
 	printf(" - ARC= %d LOST= %d\n", (int)otx_arc_cnt, (int)mPacketsLost);
+
+	// Clear pending IRQ flags
+    nRF24_ClearIRQFlags();
+    nRF24_GetStatus();
 
 	// Set operational mode (PRX == receiver)
 	nRF24_SetOperationalMode(nRF24_MODE_RX);

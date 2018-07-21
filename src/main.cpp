@@ -22,7 +22,15 @@ void catHEXstring(uint8_t *data, int len, char *string)
 	}
 }
 
-char message[128];
+char message[256];
+
+typedef struct {
+	uint32_t timestamp;		//4
+	uint8_t inputs;			//1
+	uint8_t outputs;		//1
+	uint16_t voltages[4];	//8
+	uint16_t temperature;	//2
+}__attribute__((packed, aligned(4))) nodeData_s;
 
 bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 {
@@ -37,11 +45,24 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 
 		sprintf(topic, "/node/up/%d", pipe);
 
-		uint32_t up;
-		memcpy(&up, data ,4);
-		sprintf(message, "{\"payload\":\"%d", up);
-//		catHEXstring(data, len, message);
-		strcat(message, "\"}");
+		nodeData_s up;
+		memcpy(&up, data ,16);
+		sprintf(message, "{\"uptime\":%d,"
+				"\"inputs\":%d,"
+				"\"outputs\":%d,"
+				"\"voltages\":[%d,%d,%d,%d],"
+				"\"temperature\":%d",
+				up.timestamp,
+				up.inputs,
+				up.outputs,
+				up.voltages[0],
+				up.voltages[1],
+				up.voltages[2],
+				up.voltages[3],
+				up.temperature
+				);
+
+		strcat(message, "}");
 		//printf("Message: %d\n", strlen(message) + 1);
 		//diag_dump_buf(message, strlen(message) + 1);
 		mq->publish(topic, message);
@@ -49,14 +70,6 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 
 	return false;
 }
-
-typedef struct {
-	uint32_t timestamp;		//4
-	uint8_t inputs;			//1
-	uint8_t outputs;		//1
-	uint16_t voltages[4];	//8
-	uint16_t temperature;	//2
-}__attribute__((packed, aligned(4))) nodeData_s;
 
 bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 {
