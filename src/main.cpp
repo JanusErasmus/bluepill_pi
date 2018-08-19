@@ -81,7 +81,19 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 	memcpy(address, netAddress, 5);
 	address[0] = pipe;
 
-	InterfaceNRF24::get()->transmit(address, data, 16);
+	if(!strcmp((const char*)data, "report"))
+	{
+		time_t now = time(0);
+		struct tm *tm_now = localtime(&now);
+		printf("packing report frame %s %d:%d", asctime(tm_now), tm_now->tm_hour, tm_now->tm_min);
+
+		nodeData_s down;
+		memset(&down, 0, sizeof(down));
+		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
+
+		InterfaceNRF24::get()->transmit(address, (uint8_t*)&down, 16);
+	}
+
 
 	return false;
 }
