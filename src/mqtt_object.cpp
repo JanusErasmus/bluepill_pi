@@ -1,42 +1,31 @@
-#include "mqtt_object.h"
-#include "mqtt/templates/posix_sockets.h"
-#include "json/Json.h"
-
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
+#include <pthread.h>
 #include <fcntl.h>
+
+#include "json/Json.h"
+#include "mqtt_object.h"
+
+bool MQTT::mqtt_init = false;
 
 void* client_refresher(void* client)
 {
-	int ping = 0;
-    while(1)
-    {
-    	MQTTErrors result = mqtt_sync((struct mqtt_client*) client);
-    	if (result != MQTT_OK)
-    	{
-    		printf("MQTT_sync %p KO, error: %s\n", client, mqtt_error_str(result));
-    		sleep(5);
-    	}
+	MQTT *_this = (MQTT*)client;
 
-        //ping every 10 minutes (20 * 0.5 * 60)
-        if(ping++ > 120)
-        {
-        	ping = 0;
-        	result = mqtt_ping((struct mqtt_client*) client);
-        	if (result != MQTT_OK)
-        	{
-        		printf("MQTT_ping %p KO, error: %s\n", client, mqtt_error_str(result));
-        		sleep(5);
-        	}
-        }
-        usleep(500000U); //every 500ms
-    }
-    return NULL;
+	while(1)
+	{
+		int rc = mosquitto_loop(_this->mosq, -1, 1);
+		if(rc)
+		{
+			printf("MQTT: Connection error! Wait 10s...\n");
+			sleep(10);
+			mosquitto_reconnect(_this->mosq);
+			mosquitto_subscribe(_this->mosq, NULL, _this->topic, 0);
+		}
+		sleep(1);
+	}
+	return NULL;
 }
 
 
@@ -81,24 +70,19 @@ bool parse(char *jsonSource, const char *key, char *cityValue)
 	return false;
 }
 
-void publish_callback(void** unused, struct mqtt_response_publish *published)
+void connect_callback(struct mosquitto *mosq, void *obj, int result)
 {
-    /* note that published->topic_name is NOT null-terminated (here we'll change it to a c-string) */
-    char* topic_name = (char*) malloc(published->topic_name_size + 1);
-    memcpy(topic_name, published->topic_name, published->topic_name_size);
-    topic_name[published->topic_name_size] = '\0';
+	printf("MQTT: connect callback, rc=%d\n", result);
+}
 
-    uint8_t payload[128];
-    memset(payload, 0, 128);
-    memcpy(payload, published->application_message, published->application_message_size);
-
-    printf("Received publish('%s'): %s\n", topic_name, payload);
-
+void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
+{
+	printf("MQTT: got message '%.*s' for topic '%s'\n", message->payloadlen, (char*) message->payload, message->topic);
     if(MQTT::receivedCB)
     {
     	char pipeString[32];
     	int k = 0;
-    	char *ptr = topic_name;
+    	char *ptr = message->topic;
     	do {
     		ptr = strchr(ptr, '/');
     		if(ptr)
@@ -117,105 +101,57 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
     	//printf("pipe %s\n", pipeString);
     	int pipe = atoi(pipeString);
 
-    	MQTT::receivedCB(pipe, payload, published->application_message_size + 1);
+    	MQTT::receivedCB(pipe, (uint8_t*) message->payload, message->payloadlen + 1);
     }
-
-    free(topic_name);
 }
-
-void reconnect(struct mqtt_client* client, void** arg)
-{
-	MQTT *_this = (MQTT*)*arg;
-
-	printf("reconnect to %s:%s\n", _this->address, _this->port);
-
-
-	/* setup a client */
-	if(_this->sockfd != -1)
-	{
-		close(_this->sockfd);
-		_this->sockfd = -1;
-	}
-
-	/* open the non-blocking TCP socket (connecting to the broker) */
-	while(_this->sockfd == -1)
-	{
-		_this->sockfd = open_nb_socket(_this->address, _this->port);
-		if (_this->sockfd == -1)
-		{
-			printf("Failed to open socket: waiting 5s");
-			sleep(5);
-		}
-	}
-
-	printf("opened socket %d\n", _this->sockfd);
-
-	mqtt_reinit(client, _this->sockfd, _this->sendbuf, 2048, _this->recvbuf, 1024);
-	MQTTErrors result = mqtt_connect(client, "janus_pi_client", 0, 0, 0, "janus", "Janus506", 0, 400);
-	printf("MQTT %p connect: %s\n", client, mqtt_error_str(result));
-
-
-    /* Subscribe to the topic. */
-	result = mqtt_subscribe(client, _this->topic, 0);
-	printf("Subscribe to %s: %s\n", _this->topic,  mqtt_error_str(result));
-}
-
 
 bool (*MQTT::receivedCB)(int pipe, uint8_t *data, int len) = 0;
 
 MQTT::MQTT(const char *topic, const char *addr, const char *port)
 {
-	sockfd = -1;
 	strcpy(address, addr);
 	strcpy(this->port, port);
 	strcpy(this->topic, topic);
 
-	mqtt_init_reconnect(&client, reconnect, this, publish_callback);
+	if(!mqtt_init)
+	{
+		mqtt_init = true;
+		mosquitto_lib_init();
+	}
 
-	/* check that we don't have any errors */
-//	if (result != MQTT_OK) {
-//		printf("MQTT %p KO, error: %s\n", &client, mqtt_error_str(result));
-//		//close(sockfd);
-//		//return;
-//	}
+	mosq = mosquitto_new("janus_pi", true, 0);
+	if(mosq)
+	{
+		mosquitto_connect_callback_set(mosq, connect_callback);
+		mosquitto_message_callback_set(mosq, message_callback);
+		mosquitto_username_pw_set(mosq, "janus", "Janus506");
+		int rc = mosquitto_connect(mosq, addr, atoi(port), 60);
+		if(rc)
+		{
+			printf("MQTT: Connection error! Wait 10s...\n");
+		}
+		mosquitto_subscribe(mosq, NULL, topic, 0);
+
+	}
 
 	/* start a thread to refresh the client (handle egress and ingree client traffic) */
-	if(pthread_create(&client_daemon, NULL, client_refresher, &client))
+	if(pthread_create(&client_daemon, NULL, client_refresher, this))
 	{
-		printf("Failed to start client daemon.\n");
+		printf("MQTT: Failed to start client daemon.\n");
 	}
 }
 
 MQTT::~MQTT()
 {
-	mqtt_disconnect(&client);
-
-	if (sockfd != -1)
-		close(sockfd);
+	mosquitto_destroy(mosq);
 
 	if (client_daemon != 0)
 		pthread_cancel(client_daemon);
 }
 
-
-void MQTT::checkStatus()
-{
-	MQTTErrors result = mqtt_sync(&client);
-	if(result != 1)
-		printf("MQTT %p sync: (%d) %s\n", &client, result, mqtt_error_str(result));
-}
-
 bool MQTT::publish(char *topic, char *application_message)
 {
-	/* publish the time */
-	MQTTErrors result = mqtt_publish(&client, (const char*)topic, application_message, strlen(application_message), MQTT_PUBLISH_QOS_0);
-
-	/* check for errors */
-	if (result != MQTT_OK)
-	{
-		printf( "publish error: %s\n", mqtt_error_str(result));
-		return false;
-	}
+	mosquitto_publish(mosq, 0, topic, strlen(application_message), application_message, 0, 0);
 
 	return true;
 }

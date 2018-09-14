@@ -7,18 +7,15 @@
 
 #ifndef MQTT_OBJECT_H_
 #define MQTT_OBJECT_H_
-
-#include "mqtt/mqtt.h"
+#include <stdint.h>
+#include <mosquitto.h>
 
 class MQTT
 {
-	struct mqtt_client client;
 	pthread_t client_daemon;
-
-
-
+	static bool mqtt_init;
 public:
-	int sockfd;
+	struct mosquitto *mosq;
 	char address[128];
 	char port[8];
 	char topic[128];
@@ -28,8 +25,6 @@ public:
 	static bool (*receivedCB)(int pipe, uint8_t *data, int len);
 	MQTT(const char *topic, const char *addr, const char *port);
 	virtual ~MQTT();
-
-	void checkStatus();
 
 	void setRXcb(bool(cb(int pipe, uint8_t *data, int len))){ receivedCB = cb; }
 
