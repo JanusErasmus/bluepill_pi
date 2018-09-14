@@ -73,6 +73,13 @@ bool parse(char *jsonSource, const char *key, char *cityValue)
 void connect_callback(struct mosquitto *mosq, void *obj, int result)
 {
 	printf("MQTT: connect callback, rc=%d\n", result);
+	if(result == 0)
+	{
+		char topic[] = "/pi";
+		char message[] = "online";
+
+		mosquitto_publish(mosq, 0, topic, strlen(message), message, 0, 0);
+	}
 }
 
 void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
@@ -125,6 +132,8 @@ MQTT::MQTT(const char *topic, const char *addr, const char *port)
 		mosquitto_connect_callback_set(mosq, connect_callback);
 		mosquitto_message_callback_set(mosq, message_callback);
 		mosquitto_username_pw_set(mosq, "janus", "Janus506");
+		char will[] = "offline";
+		mosquitto_will_set(mosq, "/pi", strlen(will), will, 0, 0);
 		int rc = mosquitto_connect(mosq, addr, atoi(port), 60);
 		if(rc)
 		{
