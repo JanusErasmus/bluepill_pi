@@ -1,4 +1,5 @@
 #include "mqtt_object.h"
+#include "mqtt/templates/posix_sockets.h"
 #include "json/Json.h"
 
 #include <stdio.h>
@@ -10,54 +11,30 @@
 #include <netdb.h>
 #include <fcntl.h>
 
-/*
-    A template for opening a non-blocking POSIX socket.
-*/
-int open_nb_socket(const char* addr, const char* port) {
-    struct addrinfo hints = {0};
-
-    hints.ai_family = AF_UNSPEC; /* IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_STREAM; /* Must be TCP */
-    int sockfd = -1;
-    int rv;
-    struct addrinfo *p, *servinfo;
-
-    /* get address information */
-    rv = getaddrinfo(addr, port, &hints, &servinfo);
-    if(rv != 0) {
-        fprintf(stderr, "Failed to open socket (getaddrinfo): %s\n", gai_strerror(rv));
-        return -1;
-    }
-
-    /* open the first possible socket */
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (sockfd == -1) continue;
-
-        /* connect to server */
-        rv = connect(sockfd, servinfo->ai_addr, servinfo->ai_addrlen);
-        if(rv == -1) continue;
-        break;
-    }
-
-    /* free servinfo */
-    freeaddrinfo(servinfo);
-
-    /* make non-blocking */
-    if (sockfd != -1) fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
-
-    /* return the new socket fd */
-    return sockfd;
-}
-
 void* client_refresher(void* client)
 {
+	int ping = 0;
     while(1)
     {
-    	//printf(".");
-    	//fflush(stdout);
-        mqtt_sync((struct mqtt_client*) client);
-        usleep(500000U);
+    	MQTTErrors result = mqtt_sync((struct mqtt_client*) client);
+    	if (result != MQTT_OK)
+    	{
+    		printf("MQTT_sync %p KO, error: %s\n", client, mqtt_error_str(result));
+    		sleep(5);
+    	}
+
+        //ping every 10 minutes (20 * 0.5 * 60)
+        if(ping++ > 120)
+        {
+        	ping = 0;
+        	result = mqtt_ping((struct mqtt_client*) client);
+        	if (result != MQTT_OK)
+        	{
+        		printf("MQTT_ping %p KO, error: %s\n", client, mqtt_error_str(result));
+        		sleep(5);
+        	}
+        }
+        usleep(500000U); //every 500ms
     }
     return NULL;
 }
@@ -146,41 +123,67 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
     free(topic_name);
 }
 
+void reconnect(struct mqtt_client* client, void** arg)
+{
+	MQTT *_this = (MQTT*)*arg;
+
+	printf("reconnect to %s:%s\n", _this->address, _this->port);
+
+
+	/* setup a client */
+	if(_this->sockfd != -1)
+	{
+		close(_this->sockfd);
+		_this->sockfd = -1;
+	}
+
+	/* open the non-blocking TCP socket (connecting to the broker) */
+	while(_this->sockfd == -1)
+	{
+		_this->sockfd = open_nb_socket(_this->address, _this->port);
+		if (_this->sockfd == -1)
+		{
+			printf("Failed to open socket: waiting 5s");
+			sleep(5);
+		}
+	}
+
+	printf("opened socket %d\n", _this->sockfd);
+
+	mqtt_reinit(client, _this->sockfd, _this->sendbuf, 2048, _this->recvbuf, 1024);
+	MQTTErrors result = mqtt_connect(client, "janus_pi_client", 0, 0, 0, "janus", "Janus506", 0, 400);
+	printf("MQTT %p connect: %s\n", client, mqtt_error_str(result));
+
+
+    /* Subscribe to the topic. */
+	result = mqtt_subscribe(client, _this->topic, 0);
+	printf("Subscribe to %s: %s\n", _this->topic,  mqtt_error_str(result));
+}
+
+
 bool (*MQTT::receivedCB)(int pipe, uint8_t *data, int len) = 0;
 
 MQTT::MQTT(const char *topic, const char *addr, const char *port)
 {
-	/* setup a client */
-	/* open the non-blocking TCP socket (connecting to the broker) */
-	sockfd = open_nb_socket(addr, port);
-	if (sockfd == -1) {
-		perror("Failed to open socket: ");
-		return;
-	}
+	sockfd = -1;
+	strcpy(address, addr);
+	strcpy(this->port, port);
+	strcpy(this->topic, topic);
 
-	mqtt_init(&client, sockfd, sendbuf, sizeof(sendbuf), recvbuf, sizeof(recvbuf), publish_callback);
-	mqtt_connect(&client, "janus_pi_client", NULL, NULL, 0, "janus", "Janus506", 0, 400);
+	mqtt_init_reconnect(&client, reconnect, this, publish_callback);
 
 	/* check that we don't have any errors */
-	if (client.error != MQTT_OK) {
-		printf("error: %s\n", mqtt_error_str(client.error));
-		close(sockfd);
-		return;
-	}
+//	if (result != MQTT_OK) {
+//		printf("MQTT %p KO, error: %s\n", &client, mqtt_error_str(result));
+//		//close(sockfd);
+//		//return;
+//	}
 
 	/* start a thread to refresh the client (handle egress and ingree client traffic) */
-	if(pthread_create(&client_daemon, NULL, client_refresher, &client)) {
+	if(pthread_create(&client_daemon, NULL, client_refresher, &client))
+	{
 		printf("Failed to start client daemon.\n");
-
-		mqtt_disconnect(&client);
-		close(sockfd);
-		return;
 	}
-
-	printf("Subscibe to %s\n", topic);
-
-	/* subscribe */
-	mqtt_subscribe(&client, topic, 0);
 }
 
 MQTT::~MQTT()
@@ -194,14 +197,23 @@ MQTT::~MQTT()
 		pthread_cancel(client_daemon);
 }
 
+
+void MQTT::checkStatus()
+{
+	MQTTErrors result = mqtt_sync(&client);
+	if(result != 1)
+		printf("MQTT %p sync: (%d) %s\n", &client, result, mqtt_error_str(result));
+}
+
 bool MQTT::publish(char *topic, char *application_message)
 {
 	/* publish the time */
-	mqtt_publish(&client, (const char*)topic, application_message, strlen(application_message), MQTT_PUBLISH_QOS_0);
+	MQTTErrors result = mqtt_publish(&client, (const char*)topic, application_message, strlen(application_message), MQTT_PUBLISH_QOS_0);
 
 	/* check for errors */
-	if (client.error != MQTT_OK) {
-		printf( "publish error: %s\n", mqtt_error_str(client.error));
+	if (result != MQTT_OK)
+	{
+		printf( "publish error: %s\n", mqtt_error_str(result));
 		return false;
 	}
 
