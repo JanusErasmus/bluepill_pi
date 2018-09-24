@@ -81,10 +81,11 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 	memcpy(address, netAddress, 5);
 	address[0] = pipe;
 
-	if(!strcmp((const char*)data, "report"))
-	{
 		time_t now = time(0);
 		struct tm *tm_now = localtime(&now);
+
+	if(!strcmp((const char*)data, "report"))
+	{
 		printf("packing report frame %s %d:%d", asctime(tm_now), tm_now->tm_hour, tm_now->tm_min);
 
 		nodeData_s down;
@@ -94,6 +95,17 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		InterfaceNRF24::get()->transmit(address, (uint8_t*)&down, 16);
 	}
 
+	if(!strcmp((const char*)data, "light"))
+	{
+		printf("Request %d to switch lights on\n", pipe);
+
+		nodeData_s down;
+		memset(&down, 0, sizeof(down));
+		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
+		down.outputs = 0x01; //switch lights on
+
+		InterfaceNRF24::get()->transmit(address, (uint8_t*)&down, 16);
+	}
 
 	return false;
 }
