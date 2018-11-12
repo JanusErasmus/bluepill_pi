@@ -7,21 +7,20 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "RPi/spi.h"
 #include "Utils/utils.h"
 #include "interface_nrf24.h"
 
-InterfaceNRF24 *InterfaceNRF24::__instance = 0;
+SPI *InterfaceNRF24::mSPI = 0;
 
-SPI mSPI;
+#define NRF_STATUS_PERIOD 300 //seconds
 
 uint8_t InterfaceNRF24::nrf_t(uint8_t *tx_data, uint8_t *rx_data, int len)
 {
+	if(!mSPI)
+		return 0;
+
 	try {
-
-		mSPI.transfernb( (char *) tx_data, (char *) rx_data, len);
-
-
+		mSPI->transfernb( (char *) tx_data, (char *) rx_data, len);
 	} catch (int &error)
 	{
 		printf("Permission denied: %s\n", strerror(error));
@@ -32,12 +31,18 @@ uint8_t InterfaceNRF24::nrf_t(uint8_t *tx_data, uint8_t *rx_data, int len)
 
 void InterfaceNRF24::nrf_cs_l(void)
 {
-	mSPI.beginTransaction(SPISettings(RF24_SPI_SPEED, MSBFIRST, SPI_MODE0));
+	if(!mSPI)
+		return;
+	mSPI->beginTransaction(SPISettings(RF24_SPI_SPEED, MSBFIRST, SPI_MODE0));
+	mSPI->chipSelect(0);
 }
 
 void InterfaceNRF24::nrf_cs_h(void)
 {
-	mSPI.endTransaction();
+	if(!mSPI)
+		return;
+	mSPI->endTransaction();
+	mSPI->chipSelect(1);
 }
 
 void InterfaceNRF24::nrf_ce_l(void)
@@ -50,14 +55,13 @@ void InterfaceNRF24::nrf_ce_h(void)
 	digitalWrite(RPI_V2_GPIO_P1_22,true);
 }
 
-void InterfaceNRF24::init(uint8_t *net_address, int len)
-{
-	if(!__instance)
-	{
-		mSPI.begin(0);
-		__instance = new InterfaceNRF24(net_address, len);
-	}
-}
+//void InterfaceNRF24::init(uint8_t *net_address, int len)
+//{
+//	if(!__instance)
+//	{
+//		__instance = new InterfaceNRF24(net_address, len);
+//	}
+//}
 
 void addrToString(uint8_t *addr, char *string, int len)
 {
@@ -94,6 +98,8 @@ void printPipes()
 
 InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 {
+	mSPI = new SPI();
+	mSPI->begin(0);
 	mPacketsLost = 0;
 	mNetAddressLen = len;
 	uint8_t temp_addr[5];
@@ -110,7 +116,9 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 	pinMode(RPI_V2_GPIO_P1_22 ,OUTPUT);
 	pinMode(RPI_V2_GPIO_P1_26, INPUT);
 
-	nRF24_Init(&nrf_cb);
+	mInitialized = nRF24_Init(&nrf_cb);
+	if(!mInitialized)
+		return;
 
 	// Set RF channel
 	nRF24_SetRFChannel(84);
@@ -176,6 +184,12 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 
 InterfaceNRF24::~InterfaceNRF24()
 {
+	printf("Stopping NRF24...\n");
+	nRF24_SetPowerMode(nRF24_PWR_DOWN);
+	nrf_ce_l();
+
+	if(mSPI)
+		delete mSPI;
 }
 
 #define nRF24_WAIT_TIMEOUT         (uint32_t)20
@@ -247,12 +261,12 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
     nRF24_SetAddr(nRF24_PIPETX, addr); // program TX address
 	nRF24_SetAddr(nRF24_PIPE0, addr); // program address for pipe to receive ACK
 
-    printf("ADDR: \n");
-    diag_dump_buf(addr, 5);
+    //printf("ADDR: \n");
+    //diag_dump_buf(addr, 5);
 
 	// Print a payload
 	printf("TX  : %d\n", (int)length);
-	diag_dump_buf(payload, length);
+	//diag_dump_buf(payload, length);
 
 	// Transmit a packet
 	nRF24_SetOperationalMode(nRF24_MODE_TX);
@@ -296,10 +310,31 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 	return tx_length;
 }
 
-void InterfaceNRF24::run()
+bool InterfaceNRF24::run()
 {
+	if(!mInitialized)
+	{
+		printf("NRF24 NOT Initialized!!\n");
+		return 0;
+	}
+
+	//check NRF status
+	static time_t elapsed = time(0) + NRF_STATUS_PERIOD;
+	if(elapsed < time(0))
+	{
+		elapsed = time(0) + NRF_STATUS_PERIOD;
+		printf("NRF24: Check status\n");
+
+		if(!nRF24_Check())
+		{
+			printf("NRF24 NOT OK!!\n");
+			return 0;
+		}
+		fflush(stdout);
+	}
+
 	if(digitalRead(RPI_V2_GPIO_P1_26))
-		return;
+		return 1;
 
 	uint8_t payload_length = 16;
 	uint8_t nRF24_payload[32];
@@ -318,6 +353,10 @@ void InterfaceNRF24::run()
 		//printf("RCV PIPE# %d\n", (int)pipe);
 		//printf(" PAYLOAD: %d\n", payload_length);
 		//diag_dump_buf(nRF24_payload, payload_length);
+
+		return 1;
 	}
+
+	return 1;
 }
 

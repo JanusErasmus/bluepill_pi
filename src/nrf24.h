@@ -211,7 +211,7 @@ typedef struct {
 }nRF24cb;
 
 // Function prototypes
-void nRF24_Init(nRF24cb *interface_cb);
+int nRF24_Init(nRF24cb *interface_cb);
 uint8_t nRF24_Check(void);
 
 void nRF24_SetPowerMode(uint8_t mode);

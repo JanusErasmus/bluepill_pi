@@ -1,6 +1,8 @@
 // Functions to manage the nRF24L01+ transceiver
 
 #include <string.h>
+#include <unistd.h>
+#include <stdio.h>
 
 #include "nrf24.h"
 
@@ -89,13 +91,27 @@ static void nRF24_WriteMBReg(uint8_t reg, uint8_t *pBuf, uint8_t count) {
 
 // Set transceiver to it's initial state
 // note: RX/TX pipe addresses remains untouched
-void nRF24_Init(nRF24cb *interface_cb) {
+int nRF24_Init(nRF24cb *interface_cb) {
 
 	mInterface_cb = interface_cb;
 
 	mInterface_cb->nRF24_CE_H();
 
-	nRF24_GetStatus();
+//	uint8_t status = 0xFF;
+//	do{
+//		status = nRF24_GetStatus();
+//		printf("Status %d\n", (int)status);
+//		sleep(1);
+//	}while((status == 0x00) || (status == 0xFF));
+
+	int retries = 100;
+	while(!nRF24_Check() && retries--)
+	{
+		printf("NRF24 NOT present!!\n");
+		sleep(1);
+	}
+	if(retries <= 0)
+		return 0;
 
 	// Write to registers their initial values
 	nRF24_WriteReg(nRF24_REG_CONFIG, 0x08);
@@ -124,6 +140,8 @@ void nRF24_Init(nRF24cb *interface_cb) {
 
 	// Deassert CSN pin (chip release)
 	mInterface_cb->nRF24_CSN_H();
+
+	return 1;
 }
 
 // Check if the nRF24L01 present

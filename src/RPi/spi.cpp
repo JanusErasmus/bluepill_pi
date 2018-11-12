@@ -49,5 +49,5 @@ void SPI::chipSelect(int csn_pin){
 }
 
 SPI::~SPI() {
-
+	bcm2835_spi_end();
 }

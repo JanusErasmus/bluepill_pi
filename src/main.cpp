@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #include "Utils/utils.h"
 #include "RPi/bcm2835.h"
@@ -8,8 +9,26 @@
 #include "interface_nrf24.h"
 #include "mqtt_object.h"
 
+InterfaceNRF24 *nrf = 0;
 MQTT *mq = 0;
 uint8_t netAddress[] = {0x00, 0x44, 0x55};
+
+static volatile bool running = 1;
+
+void sig_handler(int signo)
+{
+	printf("Signal: ");
+	switch(signo)
+	{
+	case SIGINT:
+		printf(" - SIGINT\n");
+		break;
+	default:
+		printf(" - %d\n", signo);
+		break;
+	}
+	running = 0;
+}
 
 
 void catHEXstring(uint8_t *data, int len, char *string)
@@ -36,7 +55,7 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 {
 	printf("RCV PIPE# %d\n", (int)pipe);
 	printf(" PAYLOAD: %d\n", len);
-	diag_dump_buf(data, len);
+	//diag_dump_buf(data, len);
 
 	if(mq)
 	{
@@ -67,15 +86,16 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 		//diag_dump_buf(message, strlen(message) + 1);
 		mq->publish(topic, message);
 	}
+	fflush(stdout);
 
 	return false;
 }
 
 bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 {
-	printf("MQTT PIPE# %d\n", (int)pipe);
-	printf(" PAYLOAD: %d\n", len);
-	diag_dump_buf(data, len);
+	//printf("MQTT PIPE# %d\n", (int)pipe);
+	//printf(" PAYLOAD: %d\n", len);
+	//diag_dump_buf(data, len);
 
 	uint8_t address[5];
 	memcpy(address, netAddress, 5);
@@ -86,13 +106,16 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 
 	if(!strcmp((const char*)data, "report"))
 	{
-		printf("packing report frame %s %d:%d", asctime(tm_now), tm_now->tm_hour, tm_now->tm_min);
+		printf("packing report frame %s %d:%d\n", asctime(tm_now), tm_now->tm_hour, tm_now->tm_min);
 
 		nodeData_s down;
 		memset(&down, 0, sizeof(down));
 		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
 
-		InterfaceNRF24::get()->transmit(address, (uint8_t*)&down, 16);
+		if(nrf)
+		nrf->transmit(address, (uint8_t*)&down, 16);
+
+		fflush(stdout);
 	}
 
 	if(!strcmp((const char*)data, "light"))
@@ -104,7 +127,9 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
 		down.outputs = 0x01; //switch lights on
 
-		InterfaceNRF24::get()->transmit(address, (uint8_t*)&down, 16);
+		if(nrf)
+		nrf->transmit(address, (uint8_t*)&down, 16);
+		fflush(stdout);
 	}
 
 	return false;
@@ -114,8 +139,17 @@ int main()
 {
 	printf("NRF24 listener\n");
 
-	InterfaceNRF24::init(netAddress, 3);
-	InterfaceNRF24::get()->setRXcb(NRFreceivedCB);
+	  if (signal(SIGINT, sig_handler) == SIG_ERR)
+		  printf("\ncan't catch SIGINT\n");
+
+	nrf = new InterfaceNRF24(netAddress, 3);
+	if(!nrf->isInitialized())
+	{
+		printf("Could NOT initialize NRF24 radio\n");
+		delete nrf;
+		return -1;
+	}
+	nrf->setRXcb(NRFreceivedCB);
 
 	const char *topic = "\/node\/down\/+";
 	const char *addr = "160.119.253.3";
@@ -123,10 +157,22 @@ int main()
 	mq = new MQTT(topic, addr, port);
 	mq->setRXcb(MQTTreceivedCB);
 
-	while(1)
+	fflush(stdout);
+	while(running)
 	{
-		InterfaceNRF24::get()->run();
+		if(nrf)
+			running = nrf->run();
+
+
 		usleep(100000);
 	}
+
+	if(nrf)
+		delete nrf;
+
+	if(mq)
+		delete mq;
+
+	fflush(stdout);
 	return 0;
 }

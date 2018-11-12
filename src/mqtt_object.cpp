@@ -8,12 +8,13 @@
 #include "mqtt_object.h"
 
 bool MQTT::mqtt_init = false;
+static volatile bool running = true;
 
 void* client_refresher(void* client)
 {
 	MQTT *_this = (MQTT*)client;
 
-	while(1)
+	while(running)
 	{
 		int rc = mosquitto_loop(_this->mosq, -1, 1);
 		if(rc)
@@ -25,6 +26,8 @@ void* client_refresher(void* client)
 		}
 		sleep(1);
 	}
+
+	printf("MQTT: Refresher stopped\n");
 	return NULL;
 }
 
@@ -152,6 +155,8 @@ MQTT::MQTT(const char *topic, const char *addr, const char *port)
 
 MQTT::~MQTT()
 {
+	running = false;
+	sleep(1);
 	mosquitto_destroy(mosq);
 
 	if (client_daemon != 0)
