@@ -325,11 +325,11 @@ bool InterfaceNRF24::run()
 
 	if(digitalRead(RPI_V2_GPIO_P1_26))
 	{
-		uint8_t payload_length = 32;
-		uint8_t nRF24_payload[32];
 		while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
 		{
 			// Get a payload from the transceiver
+			uint8_t payload_length = 32;
+			uint8_t nRF24_payload[32];
 			nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
 
 			// Clear all pending IRQ flags
