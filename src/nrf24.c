@@ -491,7 +491,9 @@ nRF24_RXResult nRF24_ReadPayload(uint8_t *pBuf, uint8_t *length) {
 	// RX FIFO empty?
 	if (pipe < 6) {
 		// Get payload length
-		*length = nRF24_ReadReg(nRF24_RX_PW_PIPE[pipe]);
+		int rx_len = nRF24_ReadReg(nRF24_RX_PW_PIPE[pipe]);
+		if(rx_len < *length)
+			*length = rx_len;
 
 		// Read a payload from the RX FIFO
 		if (*length) {

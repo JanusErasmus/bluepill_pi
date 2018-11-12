@@ -113,7 +113,7 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
 
 		if(nrf)
-		nrf->transmit(address, (uint8_t*)&down, 16);
+			nrf->transmit(address, (uint8_t*)&down, 16);
 
 		fflush(stdout);
 	}

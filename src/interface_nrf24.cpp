@@ -102,6 +102,7 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 	mSPI->begin(0);
 	mPacketsLost = 0;
 	mNetAddressLen = len;
+	mChecking = false;
 	uint8_t temp_addr[5];
 	memcpy(temp_addr, net_addr, len);
 	memcpy(mNetAddress, net_addr, len);
@@ -248,7 +249,6 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 
 	// Some banana happens, a payload remains in the TX FIFO, flush it
 	nRF24_FlushTX();
-
 	return nRF24_TX_ERROR;
 }
 
@@ -256,6 +256,10 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 {
 	int  tx_length = 0;
+
+	while(mChecking)
+		usleep(100000);
+	mChecking = true;
 
     // Configure TX PIPE
     nRF24_SetAddr(nRF24_PIPETX, addr); // program TX address
@@ -307,6 +311,7 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 
 	nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
 
+	mChecking = false;
 	return tx_length;
 }
 
@@ -318,43 +323,55 @@ bool InterfaceNRF24::run()
 		return 0;
 	}
 
-	//check NRF status
-	static time_t elapsed = time(0) + NRF_STATUS_PERIOD;
-	if(elapsed < time(0))
-	{
-		elapsed = time(0) + NRF_STATUS_PERIOD;
-		printf("NRF24: Check status\n");
-
-		if(!nRF24_Check())
-		{
-			printf("NRF24 NOT OK!!\n");
-			return 0;
-		}
-		fflush(stdout);
-	}
-
 	if(digitalRead(RPI_V2_GPIO_P1_26))
-		return 1;
-
-	uint8_t payload_length = 16;
-	uint8_t nRF24_payload[32];
-	while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
 	{
-		// Get a payload from the transceiver
-		nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
+		uint8_t payload_length = 32;
+		uint8_t nRF24_payload[32];
+		while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
+		{
+			// Get a payload from the transceiver
+			nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
 
-		// Clear all pending IRQ flags
-		nRF24_ClearIRQFlags();
+			// Clear all pending IRQ flags
+			nRF24_ClearIRQFlags();
 
-		if(receivedCB)
-			receivedCB(pipe, nRF24_payload, payload_length);
+			if(receivedCB)
+				receivedCB(pipe, nRF24_payload, payload_length);
 
-		// Print a payload contents
-		//printf("RCV PIPE# %d\n", (int)pipe);
-		//printf(" PAYLOAD: %d\n", payload_length);
-		//diag_dump_buf(nRF24_payload, payload_length);
+			// Print a payload contents
+			//printf("RCV PIPE# %d\n", (int)pipe);
+			//printf(" PAYLOAD: %d\n", payload_length);
+			//diag_dump_buf(nRF24_payload, payload_length);
 
-		return 1;
+			return 1;
+		}
+	}
+	else //only when there is no data received check health of radio
+	{
+		//check NRF status every NRF_STATUS_PERIOD seconds
+		static time_t elapsed = time(0) + NRF_STATUS_PERIOD;
+		if(elapsed < time(0))
+		{
+			elapsed = time(0) + NRF_STATUS_PERIOD;
+			printf("NRF24: Check status\n");
+
+			while(mChecking)
+				usleep(100000);
+
+			mChecking = true;
+			static int checkFails = 0;
+			if(!nRF24_Check())
+			{
+				if(checkFails++ > 5)
+					printf("NRF24 NOT OK!!\n");
+
+				mChecking = false;
+				return 0;
+			}
+			mChecking = false;
+			checkFails = 0;
+			fflush(stdout);
+		}
 	}
 
 	return 1;

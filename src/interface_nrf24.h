@@ -18,6 +18,7 @@ class InterfaceNRF24
 	int mNetAddressLen;
 	uint8_t mNetAddress[5];
 	bool mInitialized;
+	volatile bool mChecking;
 
 	bool (*receivedCB)(int pipe, uint8_t *data, int len);
 
