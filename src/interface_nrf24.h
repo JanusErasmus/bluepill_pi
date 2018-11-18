@@ -10,6 +10,7 @@
 
 #include "RPi/spi.h"
 #include "nrf24.h"
+#include "pthread.h"
 
 class InterfaceNRF24
 {
@@ -18,7 +19,8 @@ class InterfaceNRF24
 	int mNetAddressLen;
 	uint8_t mNetAddress[5];
 	bool mInitialized;
-	volatile bool mChecking;
+	pthread_mutex_t mSPImutex;
+
 
 	bool (*receivedCB)(int pipe, uint8_t *data, int len);
 
@@ -30,6 +32,7 @@ class InterfaceNRF24
 	static void nrf_ce_h(void);
 	nRF24_TXResult transmitPacket(uint8_t *pBuf, uint8_t length);
 
+	void printStatus(uint8_t status);
 
 public:
 	InterfaceNRF24(uint8_t *net_address, int len);

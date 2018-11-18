@@ -164,7 +164,7 @@ int main()
 			running = nrf->run();
 
 
-		usleep(100000);
+		usleep(10000);
 	}
 
 	if(nrf)

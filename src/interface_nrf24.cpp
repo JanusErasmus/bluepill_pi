@@ -12,7 +12,7 @@
 
 SPI *InterfaceNRF24::mSPI = 0;
 
-#define NRF_STATUS_PERIOD 300 //seconds
+#define NRF_STATUS_PERIOD 10 //seconds
 
 uint8_t InterfaceNRF24::nrf_t(uint8_t *tx_data, uint8_t *rx_data, int len)
 {
@@ -102,10 +102,14 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 	mSPI->begin(0);
 	mPacketsLost = 0;
 	mNetAddressLen = len;
-	mChecking = false;
 	uint8_t temp_addr[5];
 	memcpy(temp_addr, net_addr, len);
 	memcpy(mNetAddress, net_addr, len);
+
+	if (pthread_mutex_init(&mSPImutex, NULL) != 0)
+	{
+		printf("\n mutex init failed\n");
+	}
 
 	nrf_cb.nRF24_T = nrf_t;
 	nrf_cb.nRF24_CSN_L = nrf_cs_l;
@@ -233,7 +237,8 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 
 
 	// Check the flags in STATUS register
-	printf(" - Status: %02X\n", status);
+	printStatus(status);
+	//printf(" - Status: %02X\n", status);
 
 	if (status & nRF24_FLAG_MAX_RT) {
 		// Auto retransmit counter exceeds the programmed maximum limit (FIFO is not removed)
@@ -241,7 +246,8 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 		return nRF24_TX_MAXRT;
 	}
 
-	if (status & nRF24_FLAG_TX_DS) {
+	if (status & nRF24_FLAG_TX_DS)
+	{
 		// Successful transmission
 		return nRF24_TX_SUCCESS;
 	}
@@ -252,14 +258,44 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 	return nRF24_TX_ERROR;
 }
 
+void InterfaceNRF24::printStatus(uint8_t status)
+{
+	printf(" - Status[0x%02X]: ", status);
+	if(status & 0x01)
+	{
+		printf("TX_FULL ");
+	}
+	if(status & (0x07 << 1))
+	{
+		int pipe = ((status & (0x07 << 1)) >> 1);
+		if(pipe == 0x07)
+			printf("FIFO_EMPTY ");
+		else
+			printf("RX_P_NO[%d] ", pipe);
+	}
+	if(status & (0x01 << 4))
+	{
+		printf("MX_RT ");
+	}
+	if(status & (0x01 << 5))
+	{
+		printf("TX_DS ");
+	}
+	if(status & (0x01 << 6))
+	{
+		printf("RX_DR ");
+	}
+
+	printf("\n");
+	fflush(stdout);
+}
 
 int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 {
 	int  tx_length = 0;
 
-	while(mChecking)
-		usleep(100000);
-	mChecking = true;
+
+	pthread_mutex_lock(&mSPImutex);
 
     // Configure TX PIPE
     nRF24_SetAddr(nRF24_PIPETX, addr); // program TX address
@@ -304,14 +340,17 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 
 	// Clear pending IRQ flags
     nRF24_ClearIRQFlags();
-    nRF24_GetStatus();
+    uint8_t status = nRF24_GetStatus();
+    printStatus(status);
+
+
+	nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
 
 	// Set operational mode (PRX == receiver)
 	nRF24_SetOperationalMode(nRF24_MODE_RX);
 
-	nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
 
-	mChecking = false;
+	pthread_mutex_unlock(&mSPImutex);
 	return tx_length;
 }
 
@@ -323,14 +362,25 @@ bool InterfaceNRF24::run()
 		return 0;
 	}
 
+	//check NRF status
+	static time_t elapsed = time(0) + NRF_STATUS_PERIOD;
 	if(digitalRead(RPI_V2_GPIO_P1_26))
 	{
-		while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
-		{
-			// Get a payload from the transceiver
-			uint8_t payload_length = 32;
-			uint8_t nRF24_payload[32];
-			nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
+		if(elapsed > time(0))
+			return 1;
+	}
+
+	pthread_mutex_lock(&mSPImutex);
+	elapsed = time(0) + NRF_STATUS_PERIOD;
+//	uint8_t status = nRF24_GetStatus();
+//	printStatus(status);
+
+	while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
+	{
+		uint8_t payload_length = 16;
+		uint8_t nRF24_payload[32];
+		// Get a payload from the transceiver
+		nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
 
 			// Clear all pending IRQ flags
 			nRF24_ClearIRQFlags();
@@ -338,41 +388,13 @@ bool InterfaceNRF24::run()
 			if(receivedCB)
 				receivedCB(pipe, nRF24_payload, payload_length);
 
-			// Print a payload contents
-			//printf("RCV PIPE# %d\n", (int)pipe);
-			//printf(" PAYLOAD: %d\n", payload_length);
-			//diag_dump_buf(nRF24_payload, payload_length);
-
-			return 1;
-		}
+		// Print a payload contents
+		//printf("RCV PIPE# %d\n", (int)pipe);
+		//printf(" PAYLOAD: %d\n", payload_length);
+		//diag_dump_buf(nRF24_payload, payload_length);
+		fflush(stdout);
 	}
-	else //only when there is no data received check health of radio
-	{
-		//check NRF status every NRF_STATUS_PERIOD seconds
-		static time_t elapsed = time(0) + NRF_STATUS_PERIOD;
-		if(elapsed < time(0))
-		{
-			elapsed = time(0) + NRF_STATUS_PERIOD;
-			printf("NRF24: Check status\n");
-
-			while(mChecking)
-				usleep(100000);
-
-			mChecking = true;
-			static int checkFails = 0;
-			if(!nRF24_Check())
-			{
-				if(checkFails++ > 5)
-					printf("NRF24 NOT OK!!\n");
-
-				mChecking = false;
-				return 0;
-			}
-			mChecking = false;
-			checkFails = 0;
-			fflush(stdout);
-		}
-	}
+	pthread_mutex_unlock(&mSPImutex);
 
 	return 1;
 }
