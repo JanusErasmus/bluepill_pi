@@ -301,8 +301,15 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
     nRF24_SetAddr(nRF24_PIPETX, addr); // program TX address
 	nRF24_SetAddr(nRF24_PIPE0, addr); // program address for pipe to receive ACK
 
-    //printf("ADDR: \n");
-    //diag_dump_buf(addr, 5);
+	//disable all the other receive addresses
+	nRF24_ClosePipe(nRF24_PIPE1);
+	nRF24_ClosePipe(nRF24_PIPE2);
+	nRF24_ClosePipe(nRF24_PIPE3);
+	nRF24_ClosePipe(nRF24_PIPE4);
+	nRF24_ClosePipe(nRF24_PIPE5);
+
+    printf("TX ADDR: \n");
+    diag_dump_buf(addr, 5);
 
 	// Print a payload
 	printf("TX  : %d\n", (int)length);
@@ -345,6 +352,11 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 
 
 	nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
+	nRF24_SetRXPipe(nRF24_PIPE1, nRF24_AA_ON, 16);
+	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 16);
+	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 16);
+	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 16);
+	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 16);
 
 	// Set operational mode (PRX == receiver)
 	nRF24_SetOperationalMode(nRF24_MODE_RX);

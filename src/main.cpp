@@ -132,6 +132,21 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		fflush(stdout);
 	}
 
+	if(!strncmp((const char*)data, "s", 1))
+	{
+		int setpoint = atoi((const char*)&data[2]);
+		printf("Request %d to set set-point to: %d\n", pipe, setpoint);
+
+		nodeData_s down;
+		memset(&down, 0, sizeof(down));
+		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
+		down.voltages[0] = setpoint;
+
+		if(nrf)
+		nrf->transmit(address, (uint8_t*)&down, 16);
+		fflush(stdout);
+	}
+
 	return false;
 }
 

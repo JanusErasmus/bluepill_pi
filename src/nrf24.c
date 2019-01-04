@@ -251,7 +251,6 @@ void nRF24_SetAddrWidth(uint8_t addr_width) {
 //       pipes 1-5 share the four most significant address bytes
 void nRF24_SetAddr(uint8_t pipe, const uint8_t *addr) {
 	uint8_t addr_width = nRF24_ReadReg(nRF24_REG_SETUP_AW) + 1;
-
 	// RX_ADDR_Px register
 	switch (pipe) {
 		case nRF24_PIPETX:
