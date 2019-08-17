@@ -21,8 +21,9 @@
 
 InterfaceNRF24 *nrf = 0;
 MQTT *mq = 0;
-uint8_t netAddress[] = {0x11, 0xBB, 0x55};
-uint8_t nodeAddress[] = {0x22, 0xBB, 0x55};
+
+uint8_t netAddress[] =  {0x12, 0x3B, 0x45};
+uint8_t nodeAddress[] = {0x23, 0x1B, 0x25};
 
 static volatile bool running = 1;
 
@@ -149,7 +150,7 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 
 	if(!strcmp((const char*)data, "report"))
 	{
-		printf("packing report frame %s %d:%d%d:%d\n", asctime(tm_now), tm_now->tm_mon, tm_now->tm_mday, tm_now->tm_hour, tm_now->tm_min);
+		printf("Packing report frame %s", asctime(tm_now), tm_now->tm_mon, tm_now->tm_mday, tm_now->tm_hour, tm_now->tm_min);
 
 		down.nodeAddress = 0xFF;//broadcast address
 		down.frameType = DATA;
@@ -221,18 +222,19 @@ int main()
 		{
 			running = nrf->run();
 
-			if(ackNodeAddress != 0xFF)
-			{
-				nodeData_s down;
-				down.nodeAddress = ackNodeAddress;
-				down.frameType = ACKNOWLEDGE;
-				down.crc = CRC_8::crc((uint8_t*)&down, 31);
-				printf("Main: Sending ack to 0x%02X\n", ackNodeAddress);
-				fflush(stdout);
-				nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
-
-				ackNodeAddress = 0xFF;
-			}
+//			if(ackNodeAddress != 0xFF)
+//			{
+//				sleep(1);
+//				nodeData_s down;
+//				down.nodeAddress = ackNodeAddress;
+//				down.frameType = ACKNOWLEDGE;
+//				down.crc = CRC_8::crc((uint8_t*)&down, 31);
+//				printf("Main: Sending ack to 0x%02X\n", ackNodeAddress);
+//				fflush(stdout);
+//				nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
+//
+//				ackNodeAddress = 0xFF;
+//			}
 
 		}
 
