@@ -4,14 +4,25 @@
 #include <signal.h>
 
 #include "Utils/utils.h"
+#include "Utils/crc.h"
 #include "RPi/bcm2835.h"
 #include "RPi/RF24_arch_config.h"
 #include "interface_nrf24.h"
 #include "mqtt_object.h"
 
+#define STREET_NODE_ADDRESS     0x00
+#define UPS_NODE_ADDRESS        0x01
+#define UPS12V_NODE_ADDRESS     0x02
+#define FERMENTER_NODE_ADDRESS  0x03
+#define HOUSE_NODE_ADDRESS      0x04
+#define GARAGE_NODE_ADDRESS     0x05
+#define WATER_NODE_ADDRESS      0x06
+
+
 InterfaceNRF24 *nrf = 0;
 MQTT *mq = 0;
-uint8_t netAddress[] = {0x00, 0x44, 0x55};
+uint8_t netAddress[] = {0x11, 0xBB, 0x55};
+uint8_t nodeAddress[] = {0x22, 0xBB, 0x55};
 
 static volatile bool running = 1;
 
@@ -43,18 +54,50 @@ void catHEXstring(uint8_t *data, int len, char *string)
 
 char message[256];
 
+enum nodeFrameType_e
+{
+	DATA = 0,
+	COMMAND = 1,
+	ACKNOWLEDGE = 2
+};
+
+//Node send 32 bytes of data, with the last byte being the 8-bit CRC
 typedef struct {
-	uint32_t timestamp;		//4
-	uint8_t inputs;			//1
-	uint8_t outputs;		//1
-	uint16_t voltages[4];	//8
-	uint16_t temperature;	//2
+	uint8_t nodeAddress;	//1
+	uint8_t frameType;		//1
+	uint32_t timestamp;		//4  6
+	uint8_t inputs;			//1  7
+	uint8_t outputs;		//1  8
+	uint16_t voltages[4];	//8  16
+	uint16_t temperature;	//2  18
+	uint8_t reserved[13]; 	//13 31
+	uint8_t crc;			//1  32
 }__attribute__((packed, aligned(4))) nodeData_s;
+
+uint8_t ackNodeAddress = 0xFF;
 
 bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 {
-	printf("RCV PIPE# %d\n", (int)pipe);
-	printf(" PAYLOAD: %d\n", len);
+	nodeData_s up;
+	memcpy(&up, data ,32);
+
+	if(CRC_8::crc(data, 32))
+	{
+		printf(RED("Main: CRC error\n"));
+		return false;
+	}
+
+	nodeData_s down;
+	memcpy(&down, data, len);
+
+	if(down.frameType == ACKNOWLEDGE)
+	{
+		printf(GREEN("ACK\n"));
+		return false;
+	}
+
+	printf("Main: RCV NODE# %d\n", (int)up.nodeAddress);
+	//printf(" PAYLOAD: %d\n", len);
 	//diag_dump_buf(data, len);
 
 	if(mq)
@@ -62,10 +105,8 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 		char topic[32];
 		message[0] = 0;
 
-		sprintf(topic, "/node/up/%d", pipe);
+		sprintf(topic, "/node/up/%d", up.nodeAddress);
 
-		nodeData_s up;
-		memcpy(&up, data ,16);
 		sprintf(message, "{\"uptime\":%d,"
 				"\"inputs\":%d,"
 				"\"outputs\":%d,"
@@ -85,6 +126,8 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 		//printf("Message: %d\n", strlen(message) + 1);
 		//diag_dump_buf(message, strlen(message) + 1);
 		mq->publish(topic, message);
+
+		ackNodeAddress = up.nodeAddress;
 	}
 	fflush(stdout);
 
@@ -97,23 +140,22 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 	//printf(" PAYLOAD: %d\n", len);
 	//diag_dump_buf(data, len);
 
-	uint8_t address[5];
-	memcpy(address, netAddress, 5);
-	address[0] = pipe;
+	time_t now = time(0);
+	struct tm *tm_now = localtime(&now);
 
-		time_t now = time(0);
-		struct tm *tm_now = localtime(&now);
+	nodeData_s down;
+	memset(&down, 0, sizeof(down));
+	down.timestamp = ((tm_now->tm_mon + 1) << 24) | (tm_now->tm_mday << 16) | (tm_now->tm_hour << 8) | tm_now->tm_min;
 
 	if(!strcmp((const char*)data, "report"))
 	{
-		printf("packing report frame %s %d:%d\n", asctime(tm_now), tm_now->tm_hour, tm_now->tm_min);
+		printf("packing report frame %s %d:%d%d:%d\n", asctime(tm_now), tm_now->tm_mon, tm_now->tm_mday, tm_now->tm_hour, tm_now->tm_min);
 
-		nodeData_s down;
-		memset(&down, 0, sizeof(down));
-		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
-
+		down.nodeAddress = 0xFF;//broadcast address
+		down.frameType = DATA;
+		down.crc = CRC_8::crc((uint8_t*)&down, 31);
 		if(nrf)
-			nrf->transmit(address, (uint8_t*)&down, 16);
+			nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
 
 		fflush(stdout);
 	}
@@ -122,13 +164,13 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 	{
 		printf("Request %d to switch lights on\n", pipe);
 
-		nodeData_s down;
-		memset(&down, 0, sizeof(down));
-		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
+		down.nodeAddress = STREET_NODE_ADDRESS;
+		down.frameType = COMMAND;
 		down.outputs = 0x01; //switch lights on
+		down.crc = CRC_8::crc((uint8_t*)&down, 31);
 
 		if(nrf)
-		nrf->transmit(address, (uint8_t*)&down, 16);
+			nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
 		fflush(stdout);
 	}
 
@@ -137,13 +179,13 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		int setpoint = atoi((const char*)&data[2]);
 		printf("Request %d to set set-point to: %d\n", pipe, setpoint);
 
-		nodeData_s down;
-		memset(&down, 0, sizeof(down));
-		down.timestamp = (tm_now->tm_hour << 8) | tm_now->tm_min;
+		down.nodeAddress = FERMENTER_NODE_ADDRESS;
+		down.frameType = COMMAND;
 		down.voltages[0] = setpoint;
+		down.crc = CRC_8::crc((uint8_t*)&down, 31);
 
 		if(nrf)
-		nrf->transmit(address, (uint8_t*)&down, 16);
+			nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
 		fflush(stdout);
 	}
 
@@ -176,8 +218,23 @@ int main()
 	while(running)
 	{
 		if(nrf)
+		{
 			running = nrf->run();
 
+			if(ackNodeAddress != 0xFF)
+			{
+				nodeData_s down;
+				down.nodeAddress = ackNodeAddress;
+				down.frameType = ACKNOWLEDGE;
+				down.crc = CRC_8::crc((uint8_t*)&down, 31);
+				printf("Main: Sending ack to 0x%02X\n", ackNodeAddress);
+				fflush(stdout);
+				nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
+
+				ackNodeAddress = 0xFF;
+			}
+
+		}
 
 		usleep(10000);
 	}
@@ -189,5 +246,7 @@ int main()
 		delete mq;
 
 	fflush(stdout);
+
+	printf("DONE\n");
 	return 0;
 }

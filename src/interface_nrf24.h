@@ -21,7 +21,6 @@ class InterfaceNRF24
 	bool mInitialized;
 	pthread_mutex_t mSPImutex;
 
-
 	bool (*receivedCB)(int pipe, uint8_t *data, int len);
 
 	static SPI *mSPI;

@@ -118,7 +118,7 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 	nrf_cb.nRF24_CE_H = nrf_ce_h;
 
 
-	pinMode(RPI_V2_GPIO_P1_22 ,OUTPUT);
+	pinMode(RPI_V2_GPIO_P1_22, OUTPUT);
 	pinMode(RPI_V2_GPIO_P1_26, INPUT);
 
 	mInitialized = nRF24_Init(&nrf_cb);
@@ -140,27 +140,27 @@ InterfaceNRF24::InterfaceNRF24(uint8_t *net_addr, int len)
 
 	// Configure RX PIPES
 	nRF24_SetAddr(nRF24_PIPE0, temp_addr);
-	nRF24_SetRXPipe(nRF24_PIPE0	, nRF24_AA_ON, 16);
+	nRF24_SetRXPipe(nRF24_PIPE0	, nRF24_AA_OFF, 32);
 
-	temp_addr[0] = 0x01;
-	nRF24_SetAddr(nRF24_PIPE1, temp_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE1	, nRF24_AA_ON, 16);
-
-	temp_addr[0] = 0x02;
-	nRF24_SetAddr(nRF24_PIPE2, temp_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 16);
-
-	temp_addr[0] = 0x03;
-	nRF24_SetAddr(nRF24_PIPE3, temp_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 16);
-
-	temp_addr[0] = 0x04;
-	nRF24_SetAddr(nRF24_PIPE4, temp_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 16);
-
-	temp_addr[0] = 0x05;
-	nRF24_SetAddr(nRF24_PIPE5, temp_addr); // program address for pipe
-	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 16);
+//	temp_addr[0] = 0x01;
+//	nRF24_SetAddr(nRF24_PIPE1, temp_addr); // program address for pipe
+//	nRF24_SetRXPipe(nRF24_PIPE1	, nRF24_AA_ON, 16);
+//
+//	temp_addr[0] = 0x02;
+//	nRF24_SetAddr(nRF24_PIPE2, temp_addr); // program address for pipe
+//	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 16);
+//
+//	temp_addr[0] = 0x03;
+//	nRF24_SetAddr(nRF24_PIPE3, temp_addr); // program address for pipe
+//	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 16);
+//
+//	temp_addr[0] = 0x04;
+//	nRF24_SetAddr(nRF24_PIPE4, temp_addr); // program address for pipe
+//	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 16);
+//
+//	temp_addr[0] = 0x05;
+//	nRF24_SetAddr(nRF24_PIPE5, temp_addr); // program address for pipe
+//	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 16);
 
 	// Set TX power for Auto-ACK (maximum, to ensure that transmitter will hear ACK reply)
 	nRF24_SetTXPower(nRF24_TXPWR_0dBm);
@@ -235,9 +235,8 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 		return nRF24_TX_TIMEOUT;
 	}
 
-
 	// Check the flags in STATUS register
-	printStatus(status);
+	//printStatus(status);
 	//printf(" - Status: %02X\n", status);
 
 	if (status & nRF24_FLAG_MAX_RT) {
@@ -294,25 +293,16 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 {
 	int  tx_length = 0;
 
-
 	pthread_mutex_lock(&mSPImutex);
 
     // Configure TX PIPE
     nRF24_SetAddr(nRF24_PIPETX, addr); // program TX address
-	nRF24_SetAddr(nRF24_PIPE0, addr); // program address for pipe to receive ACK
 
-	//disable all the other receive addresses
-	nRF24_ClosePipe(nRF24_PIPE1);
-	nRF24_ClosePipe(nRF24_PIPE2);
-	nRF24_ClosePipe(nRF24_PIPE3);
-	nRF24_ClosePipe(nRF24_PIPE4);
-	nRF24_ClosePipe(nRF24_PIPE5);
-
-    printf("TX ADDR: \n");
-    diag_dump_buf(addr, 5);
+    //printf("TX ADDR: \n");
+    //diag_dump_buf(addr, 5);
 
 	// Print a payload
-	printf("TX  : %d\n", (int)length);
+	printf("InterfaceNRF24: TX[0x%02X] %d\n", (int) addr[0], (int)length);
 	//diag_dump_buf(payload, length);
 
 	// Transmit a packet
@@ -321,7 +311,7 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 	nRF24_TXResult tx_res = transmitPacket(payload, length);
 	uint8_t otx = nRF24_GetRetransmitCounters();
 	uint8_t otx_plos_cnt = (otx & nRF24_MASK_PLOS_CNT) >> 4; // packets lost counter
-	uint8_t otx_arc_cnt  = (otx & nRF24_MASK_ARC_CNT); // auto retransmissions counter
+	//uint8_t otx_arc_cnt  = (otx & nRF24_MASK_ARC_CNT); // auto retransmissions counter
 	switch (tx_res) {
 	case nRF24_TX_SUCCESS:
 		printf(GREEN(" - OK\n"));
@@ -343,20 +333,20 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 		tx_length = -3;
 		break;
 	}
-	printf(" - ARC= %d LOST= %d\n", (int)otx_arc_cnt, (int)mPacketsLost);
+	//printf(" - ARC= %d LOST= %d\n", (int)otx_arc_cnt, (int)mPacketsLost);
 
 	// Clear pending IRQ flags
     nRF24_ClearIRQFlags();
     uint8_t status = nRF24_GetStatus();
-    printStatus(status);
+    //printStatus(status);
 
 
-	nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
-	nRF24_SetRXPipe(nRF24_PIPE1, nRF24_AA_ON, 16);
-	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 16);
-	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 16);
-	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 16);
-	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 16);
+//	nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
+//	nRF24_SetRXPipe(nRF24_PIPE1, nRF24_AA_ON, 16);
+//	nRF24_SetRXPipe(nRF24_PIPE2, nRF24_AA_ON, 16);
+//	nRF24_SetRXPipe(nRF24_PIPE3, nRF24_AA_ON, 16);
+//	nRF24_SetRXPipe(nRF24_PIPE4, nRF24_AA_ON, 16);
+//	nRF24_SetRXPipe(nRF24_PIPE5, nRF24_AA_ON, 16);
 
 	// Set operational mode (PRX == receiver)
 	nRF24_SetOperationalMode(nRF24_MODE_RX);
@@ -389,16 +379,16 @@ bool InterfaceNRF24::run()
 
 	while (nRF24_GetStatus_RXFIFO() != nRF24_STATUS_RXFIFO_EMPTY)
 	{
-		uint8_t payload_length = 16;
+		uint8_t payload_length = 32;
 		uint8_t nRF24_payload[32];
 		// Get a payload from the transceiver
 		nRF24_RXResult pipe = nRF24_ReadPayload(nRF24_payload, &payload_length);
 
-			// Clear all pending IRQ flags
-			nRF24_ClearIRQFlags();
+		// Clear all pending IRQ flags
+		nRF24_ClearIRQFlags();
 
-			if(receivedCB)
-				receivedCB(pipe, nRF24_payload, payload_length);
+		if(receivedCB)
+			receivedCB(pipe, nRF24_payload, payload_length);
 
 		// Print a payload contents
 		//printf("RCV PIPE# %d\n", (int)pipe);
