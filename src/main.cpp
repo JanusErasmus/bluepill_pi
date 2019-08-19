@@ -190,6 +190,21 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		fflush(stdout);
 	}
 
+	if(!strncmp((const char*)data, "w", 1))
+	{
+		int setpoint = atoi((const char*)&data[2]);
+		printf("Request %d to %s valve\n", pipe, setpoint?"open":"close");
+
+		down.nodeAddress = WATER_NODE_ADDRESS;
+		down.frameType = COMMAND;
+		down.outputs = setpoint;
+		down.crc = CRC_8::crc((uint8_t*)&down, 31);
+
+		if(nrf)
+			nrf->transmit(nodeAddress, (uint8_t*)&down, 32);
+		fflush(stdout);
+	}
+
 	return false;
 }
 
