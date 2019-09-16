@@ -360,7 +360,12 @@ bool InterfaceNRF24::run()
 		nRF24_ClearIRQFlags();
 
 		if(receivedCB)
-			receivedCB(pipe, nRF24_payload, payload_length);
+		{
+			if(!receivedCB(pipe, nRF24_payload, payload_length))
+			{
+				return 0;
+			}
+		}
 
 		// Print a payload contents
 		//printf("RCV PIPE# %d\n", (int)pipe);

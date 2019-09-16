@@ -76,6 +76,7 @@ typedef struct {
 }__attribute__((packed, aligned(4))) nodeData_s;
 
 uint8_t ackNodeAddress = 0xFF;
+int CBfailure = 0;
 
 bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 {
@@ -85,8 +86,17 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	if(CRC_8::crc(data, 32))
 	{
 		printf(RED("Main: CRC error\n"));
+
+		if(CBfailure++ > 20)
+		{
+			CBfailure = 0;
+			printf("Something fucky with CRC\n");
+			fflush(stdout);
+			return 0;
+		}
 		return false;
 	}
+	CBfailure = 0;
 
 	nodeData_s down;
 	memcpy(&down, data, len);
@@ -94,7 +104,7 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	if(down.frameType == ACKNOWLEDGE)
 	{
 		printf(GREEN("ACK\n"));
-		return false;
+		return true;
 	}
 
 	printf("Main: RCV NODE# %d\n", (int)up.nodeAddress);
@@ -132,7 +142,7 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	}
 	fflush(stdout);
 
-	return false;
+	return true;
 }
 
 bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
