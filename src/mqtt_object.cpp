@@ -108,7 +108,7 @@ void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_
     		}
     	}while(ptr);
 
-    	//printf("pipe %s\n", pipeString);
+    	printf("pipe %s\n", pipeString);
     	int pipe = atoi(pipeString);
 
     	MQTT::receivedCB(pipe, (uint8_t*) message->payload, message->payloadlen + 1);

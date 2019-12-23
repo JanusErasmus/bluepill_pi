@@ -12,7 +12,7 @@
 
 #define STREET_NODE_ADDRESS     0x00
 #define UPS_NODE_ADDRESS        0x01
-#define UPS12V_NODE_ADDRESS     0x02
+#define LIVING_NODE_ADDRESS     0x02
 #define FERMENTER_NODE_ADDRESS  0x03
 #define HOUSE_NODE_ADDRESS      0x04
 #define GARAGE_NODE_ADDRESS     0x05
@@ -94,7 +94,6 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 			fflush(stdout);
 			return 0;
 		}
-		return false;
 	}
 	CBfailure = 0;
 
@@ -147,9 +146,9 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 
 bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 {
-	//printf("MQTT PIPE# %d\n", (int)pipe);
-	//printf(" PAYLOAD: %d\n", len);
-	//diag_dump_buf(data, len);
+	printf("MQTT PIPE# %d\n", (int)pipe);
+	printf(" PAYLOAD: %d\n", len);
+	diag_dump_buf(data, len);
 
 	time_t now = time(0);
 	struct tm *tm_now = localtime(&now);
@@ -171,13 +170,15 @@ bool MQTTreceivedCB(int pipe, uint8_t *data, int len)
 		fflush(stdout);
 	}
 
-	if(!strcmp((const char*)data, "light"))
+	if(!strncmp((const char*)data, "l", 1))
 	{
-		printf("Request %d to switch lights on\n", pipe);
 
-		down.nodeAddress = STREET_NODE_ADDRESS;
+		int outputs = atoi((const char*)&data[2]);
+		printf("Request to switch lights to: %02X\n", outputs);
+
+		down.nodeAddress = LIVING_NODE_ADDRESS;
 		down.frameType = COMMAND;
-		down.outputs = 0x01; //switch lights on
+		down.outputs = outputs;
 		down.crc = CRC_8::crc((uint8_t*)&down, 31);
 
 		if(nrf)
