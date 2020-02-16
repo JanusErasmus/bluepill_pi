@@ -76,7 +76,7 @@ typedef struct {
 }__attribute__((packed, aligned(4))) nodeData_s;
 
 uint8_t ackNodeAddress = 0xFF;
-int CBfailure = 0;
+static int CBfailure = 0;
 
 bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 {
@@ -89,10 +89,9 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 
 		if(CBfailure++ > 20)
 		{
-			CBfailure = 0;
 			printf("Something fucky with CRC\n");
 			fflush(stdout);
-			return 0;
+			return false;
 		}
 	}
 	CBfailure = 0;
@@ -109,6 +108,13 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	printf("Main: RCV NODE# %d\n", (int)up.nodeAddress);
 	//printf(" PAYLOAD: %d\n", len);
 	//diag_dump_buf(data, len);
+
+	//This is a funky node address, that should not exist
+	if(up.nodeAddress == 96)
+	{
+		printf("Received from node 96, STOP\n");
+		return false;
+	}
 
 	if(mq)
 	{
@@ -273,8 +279,7 @@ int main()
 	if(mq)
 		delete mq;
 
-	fflush(stdout);
-
 	printf("DONE\n");
+	fflush(stdout);
 	return 0;
 }

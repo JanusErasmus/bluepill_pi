@@ -341,8 +341,9 @@ bool InterfaceNRF24::run()
 	if(digitalRead(RPI_V2_GPIO_P1_26))
 	{
 		//if(elapsed > time(0))
-			return 1;
+		return 1;
 	}
+
 
 	pthread_mutex_lock(&mSPImutex);
 	//elapsed = time(0) + NRF_STATUS_PERIOD;
@@ -363,6 +364,7 @@ bool InterfaceNRF24::run()
 		{
 			if(!receivedCB(pipe, nRF24_payload, payload_length))
 			{
+				pthread_mutex_unlock(&mSPImutex);
 				return 0;
 			}
 		}
